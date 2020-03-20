@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//      https://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,6 +23,7 @@
 #include "absl/strings/string_view.h"
 
 namespace absl {
+ABSL_NAMESPACE_BEGIN
 namespace substitute_internal {
 
 void SubstituteAndAppendArray(std::string* output, absl::string_view format,
@@ -35,7 +36,7 @@ void SubstituteAndAppendArray(std::string* output, absl::string_view format,
       if (i + 1 >= format.size()) {
 #ifndef NDEBUG
         ABSL_RAW_LOG(FATAL,
-                     "Invalid strings::Substitute() format std::string: \"%s\".",
+                     "Invalid absl::Substitute() format string: \"%s\".",
                      absl::CEscape(format).c_str());
 #endif
         return;
@@ -45,8 +46,8 @@ void SubstituteAndAppendArray(std::string* output, absl::string_view format,
 #ifndef NDEBUG
           ABSL_RAW_LOG(
               FATAL,
-              "Invalid strings::Substitute() format std::string: asked for \"$"
-              "%d\", but only %d args were given.  Full format std::string was: "
+              "Invalid absl::Substitute() format string: asked for \"$"
+              "%d\", but only %d args were given.  Full format string was: "
               "\"%s\".",
               index, static_cast<int>(num_args), absl::CEscape(format).c_str());
 #endif
@@ -60,7 +61,7 @@ void SubstituteAndAppendArray(std::string* output, absl::string_view format,
       } else {
 #ifndef NDEBUG
         ABSL_RAW_LOG(FATAL,
-                     "Invalid strings::Substitute() format std::string: \"%s\".",
+                     "Invalid absl::Substitute() format string: \"%s\".",
                      absl::CEscape(format).c_str());
 #endif
         return;
@@ -72,7 +73,7 @@ void SubstituteAndAppendArray(std::string* output, absl::string_view format,
 
   if (size == 0) return;
 
-  // Build the std::string.
+  // Build the string.
   size_t original_size = output->size();
   strings_internal::STLStringResizeUninitialized(output, original_size + size);
   char* target = &(*output)[original_size];
@@ -102,9 +103,8 @@ Arg::Arg(const void* value) {
   } else {
     char* ptr = scratch_ + sizeof(scratch_);
     uintptr_t num = reinterpret_cast<uintptr_t>(value);
-    static const char kHexDigits[] = "0123456789abcdef";
     do {
-      *--ptr = kHexDigits[num & 0xf];
+      *--ptr = absl::numbers_internal::kHexChar[num & 0xf];
       num >>= 4;
     } while (num != 0);
     *--ptr = 'x';
@@ -113,5 +113,59 @@ Arg::Arg(const void* value) {
   }
 }
 
+// TODO(jorg): Don't duplicate so much code between here and str_cat.cc
+Arg::Arg(Hex hex) {
+  char* const end = &scratch_[numbers_internal::kFastToBufferSize];
+  char* writer = end;
+  uint64_t value = hex.value;
+  do {
+    *--writer = absl::numbers_internal::kHexChar[value & 0xF];
+    value >>= 4;
+  } while (value != 0);
+
+  char* beg;
+  if (end - writer < hex.width) {
+    beg = end - hex.width;
+    std::fill_n(beg, writer - beg, hex.fill);
+  } else {
+    beg = writer;
+  }
+
+  piece_ = absl::string_view(beg, end - beg);
+}
+
+// TODO(jorg): Don't duplicate so much code between here and str_cat.cc
+Arg::Arg(Dec dec) {
+  assert(dec.width <= numbers_internal::kFastToBufferSize);
+  char* const end = &scratch_[numbers_internal::kFastToBufferSize];
+  char* const minfill = end - dec.width;
+  char* writer = end;
+  uint64_t value = dec.value;
+  bool neg = dec.neg;
+  while (value > 9) {
+    *--writer = '0' + (value % 10);
+    value /= 10;
+  }
+  *--writer = '0' + value;
+  if (neg) *--writer = '-';
+
+  ptrdiff_t fillers = writer - minfill;
+  if (fillers > 0) {
+    // Tricky: if the fill character is ' ', then it's <fill><+/-><digits>
+    // But...: if the fill character is '0', then it's <+/-><fill><digits>
+    bool add_sign_again = false;
+    if (neg && dec.fill == '0') {  // If filling with '0',
+      ++writer;                    // ignore the sign we just added
+      add_sign_again = true;       // and re-add the sign later.
+    }
+    writer -= fillers;
+    std::fill_n(writer, fillers, dec.fill);
+    if (add_sign_again) *--writer = '-';
+  }
+
+  piece_ = absl::string_view(writer, end - writer);
+}
+
 }  // namespace substitute_internal
+ABSL_NAMESPACE_END
 }  // namespace absl

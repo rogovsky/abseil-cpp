@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,6 +23,8 @@
 // used.
 #include <climits>
 
+#include "absl/base/config.h"
+
 // Maybe one day we can rewrite this file not to require the elf
 // symbol extensions in glibc, but for right now we need them.
 #ifdef ABSL_HAVE_ELF_MEM_IMAGE
@@ -30,22 +32,28 @@
 #endif
 
 #if defined(__ELF__) && defined(__GLIBC__) && !defined(__native_client__) && \
-    !defined(__asmjs__)
+    !defined(__asmjs__) && !defined(__wasm__)
 #define ABSL_HAVE_ELF_MEM_IMAGE 1
 #endif
 
-#if ABSL_HAVE_ELF_MEM_IMAGE
+#ifdef ABSL_HAVE_ELF_MEM_IMAGE
 
 #include <link.h>  // for ElfW
 
 namespace absl {
-namespace debug_internal {
+ABSL_NAMESPACE_BEGIN
+namespace debugging_internal {
 
 // An in-memory ELF image (may not exist on disk).
 class ElfMemImage {
+ private:
+  // Sentinel: there could never be an elf image at &kInvalidBaseSentinel.
+  static const int kInvalidBaseSentinel;
+
  public:
   // Sentinel: there could never be an elf image at this address.
-  static const void *const kInvalidBase;
+  static constexpr const void *const kInvalidBase =
+    static_cast<const void*>(&kInvalidBaseSentinel);
 
   // Information about a single vdso symbol.
   // All pointers are into .dynsym, .dynstr, or .text of the VDSO.
@@ -117,7 +125,8 @@ class ElfMemImage {
   ElfW(Addr) link_base_;     // Link-time base (p_vaddr of first PT_LOAD).
 };
 
-}  // namespace debug_internal
+}  // namespace debugging_internal
+ABSL_NAMESPACE_END
 }  // namespace absl
 
 #endif  // ABSL_HAVE_ELF_MEM_IMAGE

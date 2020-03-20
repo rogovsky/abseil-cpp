@@ -5,7 +5,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//      https://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -56,18 +56,20 @@
 #include "absl/base/config.h"
 #include "absl/utility/utility.h"
 
-#ifdef ABSL_HAVE_STD_ANY
+#ifdef ABSL_USES_STD_ANY
 
-#include <any>
+#include <any>  // IWYU pragma: export
 
 namespace absl {
+ABSL_NAMESPACE_BEGIN
 using std::any;
 using std::any_cast;
 using std::bad_any_cast;
 using std::make_any;
+ABSL_NAMESPACE_END
 }  // namespace absl
 
-#else  // ABSL_HAVE_STD_ANY
+#else  // ABSL_USES_STD_ANY
 
 #include <algorithm>
 #include <cstddef>
@@ -91,26 +93,24 @@ using std::make_any;
 #endif  // !defined(__GNUC__) || defined(__GXX_RTTI)
 
 namespace absl {
+ABSL_NAMESPACE_BEGIN
 
 namespace any_internal {
 
-// FastTypeId<Type>() evaluates at compile/link-time to a unique integer for the
-// passed in type. Their values are neither contiguous nor small, making them
-// unfit for using as an index into a vector, but a good match for keys into
-// maps or straight up comparisons.
-// Note that on 64-bit (unix) systems size_t is 64-bit while int is 32-bit and
-// the compiler will happily and quietly assign such a 64-bit value to a
-// 32-bit integer. While a client should never do that it SHOULD still be safe,
-// assuming the BSS segment doesn't span more than 4GiB.
-template<typename Type>
-inline size_t FastTypeId() {
-  static_assert(sizeof(char*) <= sizeof(size_t),
-                "ptr size too large for size_t");
+template <typename Type>
+struct TypeTag {
+  constexpr static char dummy_var = 0;
+};
 
-  // This static variable isn't actually used, only its address, so there are
-  // no concurrency issues.
-  static char dummy_var;
-  return reinterpret_cast<size_t>(&dummy_var);
+template <typename Type>
+constexpr char TypeTag<Type>::dummy_var;
+
+// FastTypeId<Type>() evaluates at compile/link-time to a unique pointer for the
+// passed in type. These are meant to be good match for keys into maps or
+// straight up comparisons.
+template<typename Type>
+constexpr inline const void* FastTypeId() {
+  return &TypeTag<Type>::dummy_var;
 }
 
 }  // namespace any_internal
@@ -175,7 +175,9 @@ const ValueType* any_cast(const any* operand) noexcept;
 template <typename ValueType>
 ValueType* any_cast(any* operand) noexcept;
 
-// any
+// -----------------------------------------------------------------------------
+// absl::any
+// -----------------------------------------------------------------------------
 //
 // An `absl::any` object provides the facility to either store an instance of a
 // type, known as the "contained object", or no value. An `absl::any` is used to
@@ -183,7 +185,7 @@ ValueType* any_cast(any* operand) noexcept;
 // object, when containing a value, must contain a value type; storing a
 // reference type is neither desired nor supported.
 //
-// An `absl::any` can only store a type that is copy-constructable; move-only
+// An `absl::any` can only store a type that is copy-constructible; move-only
 // types are not allowed within an `any` object.
 //
 // Example:
@@ -191,16 +193,16 @@ ValueType* any_cast(any* operand) noexcept;
 //   auto a = absl::any(65);                 // Literal, copyable
 //   auto b = absl::any(std::vector<int>()); // Default-initialized, copyable
 //   std::unique_ptr<Foo> my_foo;
-//   auto c = absl::any(std::move(my_foo));  // Error, not copy-constructable
+//   auto c = absl::any(std::move(my_foo));  // Error, not copy-constructible
 //
 // Note that `absl::any` makes use of decayed types (`absl::decay_t` in this
-// context) to remove const-volative qualifiers (known as "cv qualifiers"),
+// context) to remove const-volatile qualifiers (known as "cv qualifiers"),
 // decay functions to function pointers, etc. We essentially "decay" a given
 // type into its essential type.
 //
-// `absl::any` makes use of decayed types when determing the basic type `T` of
+// `absl::any` makes use of decayed types when determining the basic type `T` of
 // the value to store in the any's contained object. In the documentation below,
-// we explcitly denote this by using the phrase "a decayed type of `T`".
+// we explicitly denote this by using the phrase "a decayed type of `T`".
 //
 // Example:
 //
@@ -307,7 +309,7 @@ class any {
   // object of type `VT` with the arguments `std::forward<Args>(args)...`, and
   // returning a reference to the new contained value.
   //
-  // Note: If an exception is thrown during the call to `VT`’s constructor,
+  // Note: If an exception is thrown during the call to `VT`'s constructor,
   // `*this` does not contain a value, and any previously contained value has
   // been destroyed.
   template <
@@ -325,10 +327,10 @@ class any {
   // Overload of `any::emplace()` to emplace a value within an `absl::any`
   // object by calling `any::reset()`, initializing the contained value as if
   // direct-non-list-initializing an object of type `VT` with the arguments
-  // `initilizer_list, std::forward<Args>(args)...`, and returning a reference
+  // `initializer_list, std::forward<Args>(args)...`, and returning a reference
   // to the new contained value.
   //
-  // Note: If an exception is thrown during the call to `VT`’s constructor,
+  // Note: If an exception is thrown during the call to `VT`'s constructor,
   // `*this` does not contain a value, and any previously contained value has
   // been destroyed. The function shall not participate in overload resolution
   // unless `is_copy_constructible_v<VT>` is `true` and
@@ -357,7 +359,7 @@ class any {
   // Swaps the passed value and the value of this `absl::any` object.
   void swap(any& other) noexcept { obj_.swap(other.obj_); }
 
-  // Observors
+  // Observers
 
   // any::has_value()
   //
@@ -376,13 +378,14 @@ class any {
     return typeid(void);
   }
 #endif  // ABSL_ANY_DETAIL_HAS_RTTI
+
  private:
   // Tagged type-erased abstraction for holding a cloneable object.
   class ObjInterface {
    public:
     virtual ~ObjInterface() = default;
     virtual std::unique_ptr<ObjInterface> Clone() const = 0;
-    virtual size_t type_id() const noexcept = 0;
+    virtual const void* ObjTypeId() const noexcept = 0;
 #if ABSL_ANY_DETAIL_HAS_RTTI
     virtual const std::type_info& Type() const noexcept = 0;
 #endif  // ABSL_ANY_DETAIL_HAS_RTTI
@@ -400,7 +403,7 @@ class any {
       return std::unique_ptr<ObjInterface>(new Obj(in_place, value));
     }
 
-    size_t type_id() const noexcept final { return IdForType<T>(); }
+    const void* ObjTypeId() const noexcept final { return IdForType<T>(); }
 
 #if ABSL_ANY_DETAIL_HAS_RTTI
     const std::type_info& Type() const noexcept final { return typeid(T); }
@@ -415,7 +418,7 @@ class any {
   }
 
   template <typename T>
-  static size_t IdForType() {
+  constexpr static const void* IdForType() {
     // Note: This type dance is to make the behavior consistent with typeid.
     using NormalizedType =
         typename std::remove_cv<typename std::remove_reference<T>::type>::type;
@@ -423,8 +426,8 @@ class any {
     return any_internal::FastTypeId<NormalizedType>();
   }
 
-  size_t GetObjTypeId() const {
-    return obj_ == nullptr ? any_internal::FastTypeId<void>() : obj_->type_id();
+  const void* GetObjTypeId() const {
+    return obj_ ? obj_->ObjTypeId() : any_internal::FastTypeId<void>();
   }
 
   // `absl::any` nonmember functions //
@@ -515,25 +518,30 @@ ValueType any_cast(any&& operand) {
 // Description at the declaration site (top of file).
 template <typename T>
 const T* any_cast(const any* operand) noexcept {
-  return operand && operand->GetObjTypeId() == any::IdForType<T>()
+  using U =
+      typename std::remove_cv<typename std::remove_reference<T>::type>::type;
+  return operand && operand->GetObjTypeId() == any::IdForType<U>()
              ? std::addressof(
-                   static_cast<const any::Obj<T>*>(operand->obj_.get())->value)
+                   static_cast<const any::Obj<U>*>(operand->obj_.get())->value)
              : nullptr;
 }
 
 // Description at the declaration site (top of file).
 template <typename T>
 T* any_cast(any* operand) noexcept {
-  return operand && operand->GetObjTypeId() == any::IdForType<T>()
+  using U =
+      typename std::remove_cv<typename std::remove_reference<T>::type>::type;
+  return operand && operand->GetObjTypeId() == any::IdForType<U>()
              ? std::addressof(
-                   static_cast<any::Obj<T>*>(operand->obj_.get())->value)
+                   static_cast<any::Obj<U>*>(operand->obj_.get())->value)
              : nullptr;
 }
 
+ABSL_NAMESPACE_END
 }  // namespace absl
 
 #undef ABSL_ANY_DETAIL_HAS_RTTI
 
-#endif  // ABSL_HAVE_STD_ANY
+#endif  // ABSL_USES_STD_ANY
 
 #endif  // ABSL_TYPES_ANY_H_

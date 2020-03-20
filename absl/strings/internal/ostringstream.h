@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//      https://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,6 +23,7 @@
 #include "absl/base/port.h"
 
 namespace absl {
+ABSL_NAMESPACE_BEGIN
 namespace strings_internal {
 
 // The same as std::ostringstream but appends to a user-specified std::string,
@@ -64,8 +65,8 @@ class OStringStream : private std::basic_streambuf<char>, public std::ostream {
   // The argument can be null, in which case you'll need to call str(p) with a
   // non-null argument before you can write to the stream.
   //
-  // The destructor of OStringStream doesn't use the std::string. It's OK to destroy
-  // the std::string before the stream.
+  // The destructor of OStringStream doesn't use the std::string. It's OK to
+  // destroy the std::string before the stream.
   explicit OStringStream(std::string* s) : std::ostream(this), s_(s) {}
 
   std::string* str() { return s_; }
@@ -75,23 +76,14 @@ class OStringStream : private std::basic_streambuf<char>, public std::ostream {
  private:
   using Buf = std::basic_streambuf<char>;
 
-  Buf::int_type overflow(int c = Buf::traits_type::eof()) override {
-    assert(s_);
-    if (!Buf::traits_type::eq_int_type(c, Buf::traits_type::eof()))
-      s_->push_back(static_cast<char>(c));
-    return 1;
-  }
-
-  std::streamsize xsputn(const char* s, std::streamsize n) override {
-    assert(s_);
-    s_->append(s, n);
-    return n;
-  }
+  Buf::int_type overflow(int c) override;
+  std::streamsize xsputn(const char* s, std::streamsize n) override;
 
   std::string* s_;
 };
 
 }  // namespace strings_internal
+ABSL_NAMESPACE_END
 }  // namespace absl
 
 #endif  // ABSL_STRINGS_INTERNAL_OSTRINGSTREAM_H_

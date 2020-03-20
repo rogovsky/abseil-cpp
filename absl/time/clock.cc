@@ -1,4 +1,20 @@
+// Copyright 2017 The Abseil Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include "absl/time/clock.h"
+
+#include "absl/base/attributes.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -18,6 +34,7 @@
 #include "absl/base/thread_annotations.h"
 
 namespace absl {
+ABSL_NAMESPACE_BEGIN
 Time Now() {
   // TODO(bww): Get a timespec instead so we don't have to divide.
   int64_t n = absl::GetCurrentTimeNanos();
@@ -27,6 +44,7 @@ Time Now() {
   }
   return time_internal::FromUnixDuration(absl::Nanoseconds(n));
 }
+ABSL_NAMESPACE_END
 }  // namespace absl
 
 // Decide if we should use the fast GetCurrentTimeNanos() algorithm
@@ -41,10 +59,8 @@ Time Now() {
 #endif
 #endif
 
-#if defined(__APPLE__)
-#include "absl/time/internal/get_current_time_ios.inc"
-#elif defined(_WIN32)
-#include "absl/time/internal/get_current_time_windows.inc"
+#if defined(__APPLE__) || defined(_WIN32)
+#include "absl/time/internal/get_current_time_chrono.inc"
 #else
 #include "absl/time/internal/get_current_time_posix.inc"
 #endif
@@ -57,9 +73,11 @@ Time Now() {
 
 #if !ABSL_USE_CYCLECLOCK_FOR_GET_CURRENT_TIME_NANOS
 namespace absl {
+ABSL_NAMESPACE_BEGIN
 int64_t GetCurrentTimeNanos() {
   return GET_CURRENT_TIME_NANOS_FROM_SYSTEM();
 }
+ABSL_NAMESPACE_END
 }  // namespace absl
 #else  // Use the cyclecounter-based implementation below.
 
@@ -77,6 +95,7 @@ static int64_t stats_slow_paths;
 static int64_t stats_fast_slow_paths;
 
 namespace absl {
+ABSL_NAMESPACE_BEGIN
 namespace time_internal {
 // This is a friend wrapper around UnscaledCycleClock::Now()
 // (needed to access UnscaledCycleClock).
@@ -365,13 +384,13 @@ static uint64_t UpdateLastSample(
 //
 // Manually mark this 'noinline' to minimize stack frame size of the fast
 // path.  Without this, sometimes a compiler may inline this big block of code
-// into the fast past.  That causes lots of register spills and reloads that
+// into the fast path.  That causes lots of register spills and reloads that
 // are unnecessary unless the slow path is taken.
 //
-// TODO(absl-team) Remove this attribute when our compiler is smart enough
+// TODO(absl-team): Remove this attribute when our compiler is smart enough
 // to do the right thing.
 ABSL_ATTRIBUTE_NOINLINE
-static int64_t GetCurrentTimeNanosSlowPath() LOCKS_EXCLUDED(lock) {
+static int64_t GetCurrentTimeNanosSlowPath() ABSL_LOCKS_EXCLUDED(lock) {
   // Serialize access to slow-path.  Fast-path readers are not blocked yet, and
   // code below must not modify last_sample until the seqlock is acquired.
   lock.Lock();
@@ -416,7 +435,7 @@ static int64_t GetCurrentTimeNanosSlowPath() LOCKS_EXCLUDED(lock) {
 static uint64_t UpdateLastSample(uint64_t now_cycles, uint64_t now_ns,
                                  uint64_t delta_cycles,
                                  const struct TimeSample *sample)
-    EXCLUSIVE_LOCKS_REQUIRED(lock) {
+    ABSL_EXCLUSIVE_LOCKS_REQUIRED(lock) {
   uint64_t estimated_base_ns = now_ns;
   uint64_t lock_value = SeqAcquire(&seq);  // acquire seqlock to block readers
 
@@ -435,7 +454,7 @@ static uint64_t UpdateLastSample(uint64_t now_cycles, uint64_t now_ns,
     last_sample.min_cycles_per_sample.store(0, std::memory_order_relaxed);
     stats_initializations++;
   } else if (sample->raw_ns + 500 * 1000 * 1000 < now_ns &&
-             sample->base_cycles + 100 < now_cycles) {
+             sample->base_cycles + 50 < now_cycles) {
     // Enough time has passed to compute the cycle time.
     if (sample->nsscaled_per_cycle != 0) {  // Have a cycle time estimate.
       // Compute time from counter reading, but avoiding overflow
@@ -501,16 +520,18 @@ static uint64_t UpdateLastSample(uint64_t now_cycles, uint64_t now_ns,
 
   return estimated_base_ns;
 }
+ABSL_NAMESPACE_END
 }  // namespace absl
 #endif  // ABSL_USE_CYCLECLOCK_FOR_GET_CURRENT_TIME_NANOS
 
 namespace absl {
+ABSL_NAMESPACE_BEGIN
 namespace {
 
 // Returns the maximum duration that SleepOnce() can sleep for.
 constexpr absl::Duration MaxSleep() {
 #ifdef _WIN32
-  // Windows _sleep() takes unsigned long argument in milliseconds.
+  // Windows Sleep() takes unsigned long argument in milliseconds.
   return absl::Milliseconds(
       std::numeric_limits<unsigned long>::max());  // NOLINT(runtime/int)
 #else
@@ -522,7 +543,7 @@ constexpr absl::Duration MaxSleep() {
 // REQUIRES: to_sleep <= MaxSleep().
 void SleepOnce(absl::Duration to_sleep) {
 #ifdef _WIN32
-  _sleep(to_sleep / absl::Milliseconds(1));
+  Sleep(to_sleep / absl::Milliseconds(1));
 #else
   struct timespec sleep_time = absl::ToTimespec(to_sleep);
   while (nanosleep(&sleep_time, &sleep_time) != 0 && errno == EINTR) {
@@ -532,6 +553,7 @@ void SleepOnce(absl::Duration to_sleep) {
 }
 
 }  // namespace
+ABSL_NAMESPACE_END
 }  // namespace absl
 
 extern "C" {
