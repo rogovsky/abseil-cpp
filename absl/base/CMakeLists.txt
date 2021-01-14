@@ -105,11 +105,11 @@ absl_cc_library(
   HDRS
     "dynamic_annotations.h"
   SRCS
-    "dynamic_annotations.cc"
+    "internal/dynamic_annotations.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
-  DEFINES
-    "__CLANG_SUPPORT_DYN_ANNOTATION__"
+  DEPS
+    absl::config
   PUBLIC
 )
 
@@ -191,7 +191,7 @@ absl_cc_library(
     ${ABSL_DEFAULT_COPTS}
   LINKOPTS
     ${ABSL_DEFAULT_LINKOPTS}
-    $<$<BOOL:${LIBRT}>:${LIBRT}>
+    $<$<BOOL:${LIBRT}>:-lrt>
     $<$<BOOL:${MINGW}>:"advapi32">
   DEPS
     absl::atomic_hook
@@ -384,6 +384,7 @@ absl_cc_library(
     ${ABSL_TEST_COPTS}
   DEPS
     absl::base
+    absl::config
     absl::base_internal
     absl::core_headers
     absl::synchronization
@@ -402,6 +403,7 @@ absl_cc_test(
   DEPS
     absl::base
     absl::base_internal
+    absl::config
     absl::core_headers
     absl::synchronization
     gtest_main
@@ -497,6 +499,7 @@ absl_cc_test(
     ${ABSL_TEST_COPTS}
   DEPS
     absl::malloc_internal
+    absl::node_hash_map
     Threads::Threads
 )
 
@@ -512,30 +515,6 @@ absl_cc_test(
     absl::core_headers
     absl::synchronization
     Threads::Threads
-    gtest_main
-)
-
-absl_cc_library(
-  NAME
-    bits
-  HDRS
-    "internal/bits.h"
-  COPTS
-    ${ABSL_DEFAULT_COPTS}
-  DEPS
-    absl::config
-    absl::core_headers
-)
-
-absl_cc_test(
-  NAME
-    bits_test
-  SRCS
-    "internal/bits_test.cc"
-  COPTS
-    ${ABSL_TEST_COPTS}
-  DEPS
-    absl::bits
     gtest_main
 )
 
@@ -672,5 +651,43 @@ absl_cc_test(
     absl::strerror
     absl::strings
     gmock
+    gtest_main
+)
+
+absl_cc_library(
+  NAME
+    fast_type_id
+  HDRS
+    "internal/fast_type_id.h"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  LINKOPTS
+    ${ABSL_DEFAULT_LINKOPTS}
+  DEPS
+    absl::config
+)
+
+absl_cc_test(
+  NAME
+    fast_type_id_test
+  SRCS
+    "internal/fast_type_id_test.cc"
+  COPTS
+    ${ABSL_TEST_COPTS}
+  DEPS
+    absl::fast_type_id
+    gtest_main
+)
+
+absl_cc_test(
+  NAME
+    optimization_test
+  SRCS
+    "optimization_test.cc"
+  COPTS
+    ${ABSL_TEST_COPTS}
+  DEPS
+    absl::core_headers
+    absl::optional
     gtest_main
 )

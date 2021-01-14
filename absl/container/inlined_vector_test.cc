@@ -30,6 +30,7 @@
 #include "absl/base/internal/exception_testing.h"
 #include "absl/base/internal/raw_logging.h"
 #include "absl/base/macros.h"
+#include "absl/base/options.h"
 #include "absl/container/internal/counting_allocator.h"
 #include "absl/container/internal/test_instance_tracker.h"
 #include "absl/hash/hash_testing.h"
@@ -245,6 +246,16 @@ TEST(IntVec, Erase) {
       }
     }
   }
+}
+
+TEST(IntVec, Hardened) {
+  IntVec v;
+  Fill(&v, 10);
+  EXPECT_EQ(v[9], 9);
+#if !defined(NDEBUG) || ABSL_OPTION_HARDENED
+  EXPECT_DEATH_IF_SUPPORTED(v[10], "");
+  EXPECT_DEATH_IF_SUPPORTED(v[-1], "");
+#endif
 }
 
 // At the end of this test loop, the elements between [erase_begin, erase_end)
@@ -725,22 +736,26 @@ TEST(OverheadTest, Storage) {
   // In particular, ensure that std::allocator doesn't cost anything to store.
   // The union should be absorbing some of the allocation bookkeeping overhead
   // in the larger vectors, leaving only the size_ field as overhead.
-  EXPECT_EQ(2 * sizeof(int*),
-            sizeof(absl::InlinedVector<int*, 1>) - 1 * sizeof(int*));
-  EXPECT_EQ(1 * sizeof(int*),
-            sizeof(absl::InlinedVector<int*, 2>) - 2 * sizeof(int*));
-  EXPECT_EQ(1 * sizeof(int*),
-            sizeof(absl::InlinedVector<int*, 3>) - 3 * sizeof(int*));
-  EXPECT_EQ(1 * sizeof(int*),
-            sizeof(absl::InlinedVector<int*, 4>) - 4 * sizeof(int*));
-  EXPECT_EQ(1 * sizeof(int*),
-            sizeof(absl::InlinedVector<int*, 5>) - 5 * sizeof(int*));
-  EXPECT_EQ(1 * sizeof(int*),
-            sizeof(absl::InlinedVector<int*, 6>) - 6 * sizeof(int*));
-  EXPECT_EQ(1 * sizeof(int*),
-            sizeof(absl::InlinedVector<int*, 7>) - 7 * sizeof(int*));
-  EXPECT_EQ(1 * sizeof(int*),
-            sizeof(absl::InlinedVector<int*, 8>) - 8 * sizeof(int*));
+
+  struct T { void* val; };
+  size_t expected_overhead = sizeof(T);
+
+  EXPECT_EQ((2 * expected_overhead),
+            sizeof(absl::InlinedVector<T, 1>) - sizeof(T[1]));
+  EXPECT_EQ(expected_overhead,
+            sizeof(absl::InlinedVector<T, 2>) - sizeof(T[2]));
+  EXPECT_EQ(expected_overhead,
+            sizeof(absl::InlinedVector<T, 3>) - sizeof(T[3]));
+  EXPECT_EQ(expected_overhead,
+            sizeof(absl::InlinedVector<T, 4>) - sizeof(T[4]));
+  EXPECT_EQ(expected_overhead,
+            sizeof(absl::InlinedVector<T, 5>) - sizeof(T[5]));
+  EXPECT_EQ(expected_overhead,
+            sizeof(absl::InlinedVector<T, 6>) - sizeof(T[6]));
+  EXPECT_EQ(expected_overhead,
+            sizeof(absl::InlinedVector<T, 7>) - sizeof(T[7]));
+  EXPECT_EQ(expected_overhead,
+            sizeof(absl::InlinedVector<T, 8>) - sizeof(T[8]));
 }
 
 TEST(IntVec, Clear) {

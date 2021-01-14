@@ -28,6 +28,7 @@
 #include "gtest/gtest.h"
 #include "absl/base/config.h"
 #include "absl/base/dynamic_annotations.h"
+#include "absl/base/options.h"
 
 #if defined(ABSL_HAVE_STD_STRING_VIEW) || defined(__ANDROID__)
 // We don't control the death messaging when using std::string_view.
@@ -820,7 +821,7 @@ TEST(StringViewTest, FrontBackSingleChar) {
 
 TEST(StringViewTest, FrontBackEmpty) {
 #ifndef ABSL_USES_STD_STRING_VIEW
-#ifndef NDEBUG
+#if !defined(NDEBUG) || ABSL_OPTION_HARDENED
   // Abseil's string_view implementation has debug assertions that check that
   // front() and back() are not called on an empty string_view.
   absl::string_view sv;
@@ -914,9 +915,9 @@ TEST(StringViewTest, At) {
   EXPECT_EQ(abc.at(1), 'b');
   EXPECT_EQ(abc.at(2), 'c');
 #ifdef ABSL_HAVE_EXCEPTIONS
-  EXPECT_THROW(abc.at(3), std::out_of_range);
+  EXPECT_THROW((void)abc.at(3), std::out_of_range);
 #else
-  ABSL_EXPECT_DEATH_IF_SUPPORTED(abc.at(3), "absl::string_view::at");
+  ABSL_EXPECT_DEATH_IF_SUPPORTED((void)abc.at(3), "absl::string_view::at");
 #endif
 }
 
@@ -1130,7 +1131,7 @@ TEST(StringViewTest, Noexcept) {
 
 TEST(StringViewTest, BoundsCheck) {
 #ifndef ABSL_USES_STD_STRING_VIEW
-#ifndef NDEBUG
+#if !defined(NDEBUG) || ABSL_OPTION_HARDENED
   // Abseil's string_view implementation has bounds-checking in debug mode.
   absl::string_view h = "hello";
   ABSL_EXPECT_DEATH_IF_SUPPORTED(h[5], "");
@@ -1176,9 +1177,9 @@ TEST(FindOneCharTest, EdgeCases) {
   EXPECT_EQ(absl::string_view::npos, a.rfind('x'));
 }
 
-#ifndef THREAD_SANITIZER  // Allocates too much memory for tsan.
+#ifndef ABSL_HAVE_THREAD_SANITIZER  // Allocates too much memory for tsan.
 TEST(HugeStringView, TwoPointTwoGB) {
-  if (sizeof(size_t) <= 4 || RunningOnValgrind())
+  if (sizeof(size_t) <= 4)
     return;
   // Try a huge string piece.
   const size_t size = size_t{2200} * 1000 * 1000;
@@ -1190,7 +1191,7 @@ TEST(HugeStringView, TwoPointTwoGB) {
   sp.remove_suffix(2);
   EXPECT_EQ(size - 1 - 2, sp.length());
 }
-#endif  // THREAD_SANITIZER
+#endif  // ABSL_HAVE_THREAD_SANITIZER
 
 #if !defined(NDEBUG) && !defined(ABSL_USES_STD_STRING_VIEW)
 TEST(NonNegativeLenTest, NonNegativeLen) {

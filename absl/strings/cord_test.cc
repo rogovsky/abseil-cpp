@@ -1,3 +1,17 @@
+// Copyright 2020 The Abseil Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include "absl/strings/cord.h"
 
 #include <algorithm>
@@ -18,9 +32,11 @@
 #include "absl/base/config.h"
 #include "absl/base/internal/endian.h"
 #include "absl/base/internal/raw_logging.h"
+#include "absl/base/macros.h"
 #include "absl/container/fixed_array.h"
 #include "absl/strings/cord_test_helpers.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 
 typedef std::mt19937_64 RandomEngine;
@@ -165,6 +181,8 @@ class CordTestPeer {
       const Cord& c, absl::FunctionRef<void(absl::string_view)> callback) {
     c.ForEachChunk(callback);
   }
+
+  static bool IsTree(const Cord& c) { return c.contents_.is_tree(); }
 };
 
 ABSL_NAMESPACE_END
@@ -394,6 +412,9 @@ TEST(Cord, Swap) {
   swap(x, y);
   ASSERT_EQ(x, absl::Cord(b));
   ASSERT_EQ(y, absl::Cord(a));
+  x.swap(y);
+  ASSERT_EQ(x, absl::Cord(a));
+  ASSERT_EQ(y, absl::Cord(b));
 }
 
 static void VerifyCopyToString(const absl::Cord& cord) {
@@ -1579,4 +1600,112 @@ TEST(Cord, SmallBufferAssignFromOwnData) {
           << "pos = " << pos << "; count = " << count;
     }
   }
+}
+
+TEST(Cord, Format) {
+  absl::Cord c;
+  absl::Format(&c, "There were %04d little %s.", 3, "pigs");
+  EXPECT_EQ(c, "There were 0003 little pigs.");
+  absl::Format(&c, "And %-3llx bad wolf!", 1);
+  EXPECT_EQ(c, "There were 0003 little pigs.And 1   bad wolf!");
+}
+
+TEST(CordDeathTest, Hardening) {
+  absl::Cord cord("hello");
+  // These statement should abort the program in all builds modes.
+  EXPECT_DEATH_IF_SUPPORTED(cord.RemovePrefix(6), "");
+  EXPECT_DEATH_IF_SUPPORTED(cord.RemoveSuffix(6), "");
+
+  bool test_hardening = false;
+  ABSL_HARDENING_ASSERT([&]() {
+    // This only runs when ABSL_HARDENING_ASSERT is active.
+    test_hardening = true;
+    return true;
+  }());
+  if (!test_hardening) return;
+
+  EXPECT_DEATH_IF_SUPPORTED(cord[5], "");
+  EXPECT_DEATH_IF_SUPPORTED(*cord.chunk_end(), "");
+  EXPECT_DEATH_IF_SUPPORTED(static_cast<void>(cord.chunk_end()->empty()), "");
+  EXPECT_DEATH_IF_SUPPORTED(++cord.chunk_end(), "");
+}
+
+class AfterExitCordTester {
+ public:
+  bool Set(absl::Cord* cord, absl::string_view expected) {
+    cord_ = cord;
+    expected_ = expected;
+    return true;
+  }
+
+  ~AfterExitCordTester() {
+    EXPECT_EQ(*cord_, expected_);
+  }
+ private:
+  absl::Cord* cord_;
+  absl::string_view expected_;
+};
+
+template <typename Str>
+void TestConstinitConstructor(Str) {
+  const auto expected = Str::value;
+  // Defined before `cord` to be destroyed after it.
+  static AfterExitCordTester exit_tester;  // NOLINT
+  ABSL_CONST_INIT static absl::Cord cord(Str{});  // NOLINT
+  static bool init_exit_tester = exit_tester.Set(&cord, expected);
+  (void)init_exit_tester;
+
+  EXPECT_EQ(cord, expected);
+  // Copy the object and test the copy, and the original.
+  {
+    absl::Cord copy = cord;
+    EXPECT_EQ(copy, expected);
+  }
+  // The original still works
+  EXPECT_EQ(cord, expected);
+
+  // Try making adding more structure to the tree.
+  {
+    absl::Cord copy = cord;
+    std::string expected_copy(expected);
+    for (int i = 0; i < 10; ++i) {
+      copy.Append(cord);
+      absl::StrAppend(&expected_copy, expected);
+      EXPECT_EQ(copy, expected_copy);
+    }
+  }
+
+  // Make sure we are using the right branch during constant evaluation.
+  EXPECT_EQ(absl::CordTestPeer::IsTree(cord), cord.size() >= 16);
+
+  for (int i = 0; i < 10; ++i) {
+    // Make a few more Cords from the same global rep.
+    // This tests what happens when the refcount for it gets below 1.
+    EXPECT_EQ(expected, absl::Cord(Str{}));
+  }
+}
+
+constexpr int SimpleStrlen(const char* p) {
+  return *p ? 1 + SimpleStrlen(p + 1) : 0;
+}
+
+struct ShortView {
+  constexpr absl::string_view operator()() const {
+    return absl::string_view("SSO string", SimpleStrlen("SSO string"));
+  }
+};
+
+struct LongView {
+  constexpr absl::string_view operator()() const {
+    return absl::string_view("String that does not fit SSO.",
+                             SimpleStrlen("String that does not fit SSO."));
+  }
+};
+
+
+TEST(Cord, ConstinitConstructor) {
+  TestConstinitConstructor(
+      absl::strings_internal::MakeStringConstant(ShortView{}));
+  TestConstinitConstructor(
+      absl::strings_internal::MakeStringConstant(LongView{}));
 }
